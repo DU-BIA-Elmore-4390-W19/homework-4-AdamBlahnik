@@ -1,29 +1,191 @@
 ---
 title: 'Homework 4: Bags, Forests, Boosts, oh my'
-author: "Your Name Goes Here"
-date: "2/28/2019"
+author: "Adam Blahnik"
+date: "3/10/2019"
 output: github_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo =TRUE)
+```
+
+```{r importing, include = FALSE}
+library(tibble)
+library(dplyr)
+library(caret)
+library(MASS)
+library(randomForest)
 ```
 
 ## Problem 1
+Problem 7 from Chapter 8 in the text. To be specific, please use a sequence of `ntree` from 25 to 500 in steps of 25 and `mtry` from 3 to 9 for by 1. 
 
-Problem 7 from Chapter 8 in the text. To be specific, please use a sequence of
-`ntree` from 25 to 500 in steps of 25 and `mtry` from 3 to 9 for by 1. 
+In the lab, we applied random forests to the Boston data using 
+mtry  = 3 4 5 6 7 8 9
+ntree = 25 50 75 100 125 150 175 200 225 250 275 300 325 350 375 400 425 450 475 500
+Create a plot displaying the test error resulting from random forests on this data set for a more comprehensive range of values for mtry and ntree. You can model your plot after Figure 8.10. Describe the results obtained.
 
 ## Answer 1
+```{r 1-1, include = FALSE}
+set.seed(1)
+df <- tbl_df(Boston)
+inTraining <- createDataPartition(df$medv, p = 0.75, list = F)
+training <- df[inTraining, ]
+testing <- df[-inTraining, ]
+```
+
+```{r 1-2, include = FALSE}
+set.seed(10982)
+mtry <- c(3:9)
+ntree <- seq(25, 500, len = 20)
+results <- tibble(mtry = rep(NA, 140), 
+                  ntree = rep(NA, 140), 
+                  mse = rep(NA, 140))
+for(i in 1:7){
+  for(j in 1:20){
+    rf_train <- randomForest(medv ~ ., 
+                             data = training, 
+                             mtry = mtry[i], 
+                             ntree = ntree[j])
+    mse <- mean((predict(rf_train, newdata = testing) - testing$medv)^2)
+    results [(i-1)*20 + j, ] <- c(mtry[i], ntree[j], mse)
+  }
+}
+```
+
+```{r 1-3}
+p <- ggplot(data = results, 
+            aes(x = ntree, y = mse, col = as.factor(mtry)))
+p + geom_line() + 
+  geom_point() + 
+  scale_color_brewer("mtry", palette = "Set1")
+```
+
+###  Results
+#### They're very pretty results, but they don't make sense. That, however, is an abberation; seeds other than '1' result in a much more appropriate distribution of MSEs. The higher the 'mtry,' the lower the MSE. 
+
+***
 
 ## Problem 2
+Problem 8 from Chapter 8 in the text. Set your seed with 9823 and split into train/test using 50% of your data in each split. In addition to parts (a) - (e), do the following:
 
-Problem 8 from Chapter 8 in the text. Set your seed with 9823 and split into 
-train/test using 50\% of your data in each split. In addition to 
-parts (a) - (e), do the following:
-
-1. Fit a gradient-boosted tree to the training data and report the estimated 
-test MSE. 
-2. Fit a multiple regression model to the training data and report the 
-estimated test MSE
+1. Fit a gradient-boosted tree to the training data and report the estimated test MSE. 
+2. Fit a multiple regression model to the training data and report the estimated test MSE.
 3. Summarize your results. 
+
+In the lab, a classification tree was applied to the Carseats data set after converting Sales into a qualitative response variable. Now we will seek to predict Sales using regression trees and related approaches, treating the response as a quantitative variable.
+(a) Split the data set into a training set and a test set.
+(b) Fit a regression tree to the training set. Plot the tree, and interpret the results. What test MSE do you obtain?
+(c) Use cross-validation in order to determine the optimal level of tree complexity. Does pruning the tree improve the test MSE?
+(d) Use the bagging approach in order to analyze this data. What test MSE do you obtain? Use the importance()
+(e) Use random forests to analyze this data. What test MSE do you obtain? Use the importance() function to determine which variables aremost important. Describe the effect of m, the number of variables considered at each split, on the error rate obtained.
+
+## Answer 2
+```{r A, include = FALSE}
+library(tree)
+library(ISLR)
+library(rpart)
+library(rpart.plot)
+library(partykit)
+attach(Carseats)
+set.seed(9823)
+df <- tbl_df(Carseats)
+inTraining <- createDataPartition(df$Sales, p = 0.50, list = F)
+training <- df[inTraining, ]
+testing <- df[-inTraining, ]
+```
+
+```{r B1}
+tree_carseats <- rpart::rpart(Sales ~ ., 
+                              data = training,
+                              control = rpart.control(minsplit = 20))
+summary(tree_carseats)
+rpart.plot(tree_carseats)
+```
+
+```{r B2}
+plot(as.party(tree_carseats))
+```
+
+```{r B3}
+pred_carseats <- predict(tree_carseats, testing)
+mean((testing$Sales - pred_carseats)^2)
+```
+
+###  Test MSEs
+#### Original: 4.48
+
+```{r C1}
+fit_control <- trainControl(method = "repeatedcv",
+                            number = 10, 
+                            repeats = 10)
+cv_tree_carseats <- train(Sales ~ ., 
+                          data = training,
+                          method = "rpart", 
+                          trControl = fit_control)
+plot(cv_tree_carseats)
+```
+
+```{r C2}
+plot(as.party(cv_tree_carseats$finalModel))
+```
+
+```{r C3}
+pred_carseats_1 <- predict(cv_tree_carseats, testing)
+mean((testing$Sales - pred_carseats_1)^2)
+```
+
+###  Test MSEs
+#### Original: 4.48
+#### Pruned:   6.17
+
+```{r D1}
+bag_carseats <- randomForest(Sales ~ ., data = training, mtry = 10)
+bag_carseats
+```
+
+```{r D2}
+test_preds <- predict(bag_carseats, newdata = testing)
+carseats_test_df <- testing %>%
+  mutate(y_hat_bags = test_preds,
+         sq_err_bags = (y_hat_bags - Sales)^2)
+mean(carseats_test_df$sq_err_bags)
+```
+
+###  Test MSEs
+#### Original: 4.48
+#### Pruned:   6.17
+#### Bagging:  3.06 
+
+```{r D3}
+importance(bag_carseats)
+```
+
+###  Most important predictor variables for Sales: 
+#### Bagged Approach: ShelveLoc, Price, CompPrice, Income, Advertising
+
+```{r E1}
+rf_carseats <- randomForest(Sales ~ ., 
+                            data = training,
+                            mtry = 10)
+rf_carseats
+```
+
+```{r E2}
+pred_carseats_3 <- predict(rf_carseats, testing)
+mean((testing$Sales - pred_carseats_3)^2)
+```
+
+###  Test MSEs
+#### Original:       4.48
+#### Pruned:         6.17
+#### Bagging:        3.06 
+#### Random Forest:  2.87
+
+```{r E3}
+importance(rf_carseats)
+```
+
+###  Most important predictor variables for Sales: 
+#### Bagged Approach: ShelveLoc, Price, CompPrice, Income, Advertising
+#### Random Forest:   ShelveLoc, Price, CompPrice, Income, Advertising
